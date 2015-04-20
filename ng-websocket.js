@@ -14,10 +14,12 @@
         wsp.$$config = {
             lazy: false,
             reconnect: true,
-            reconnectInterval: 2000,
+            initialReconnectTimeout: 500, // 500 milliseconds
+            maxReconnectTimeout: 3 * 60 * 1000, // 3 minutes
             mock: false,
             enqueue: false,
-            protocols: null
+            protocols: null,
+            scope: null // will be set to $rootScope inside of the $get method below.
         };
 
         wsp.$setup = function (cfg) {
@@ -27,8 +29,9 @@
             return wsp;
         };
 
-        wsp.$get = ['$http', function ($http) {
-            return new $websocketService(wsp.$$config, $http);
+        wsp.$get = ['$http', '$rootScope', '$timeout', function ($http, $rootScope, $timeout) {
+            wsp.$$config.scope = $rootScope;
+            return new $websocketService(wsp.$$config, $http, $timeout);
         }];
     }
 
@@ -39,7 +42,7 @@
      * @description
      * HTML5 Websocket service for AngularJS
      */
-    function $websocketService (cfg, $http) {
+    function $websocketService (cfg, $http, $timeout) {
         var wss = this;
 
         wss.$$websocketList = {};
@@ -68,7 +71,7 @@
             if (typeof ws === 'undefined') {
                 var wsCfg = angular.extend({}, wss.$$config, cfg);
 
-                ws = new $websocket(wsCfg, $http);
+                ws = new $websocket(wsCfg, $http, $timeout);
                 wss.$$websocketList[wsCfg.url] = ws;
             }
 
@@ -83,7 +86,7 @@
      * @description
      * HTML5 Websocket wrapper class for AngularJS
      */
-    function $websocket (cfg, $http) {
+    function $websocket (cfg, $http, $timeout) {
         var me = this;
 
         if (typeof cfg === 'undefined' || (typeof cfg === 'object' && typeof cfg.url === 'undefined')) throw new Error('An url must be specified for WebSocket');
@@ -97,11 +100,14 @@
             url: undefined,
             lazy: false,
             reconnect: true,
-            reconnectInterval: 2000,
+            initialReconnectTimeout: 500, // 500 milliseconds
+            maxReconnectTimeout: 3 * 60 * 1000, // 3 minutes
             enqueue: false,
             mock: false,
-            protocols: null
+            protocols: null,
+            scope: null
         };
+        me.$$reconnectAttempts = 0;
 
         me.$$fireEvent = function () {
             var args = [];
@@ -113,9 +119,26 @@
 
             if (typeof handlers !== 'undefined') {
                 for (var i = 0; i < handlers.length; i++) {
-                    if (typeof handlers[i] === 'function') handlers[i].apply(me, args);
+                    if (typeof handlers[i] === 'function') me.$$apply(handlers[i], args); //handlers[i].apply(me, args);
                 }
             }
+        };
+
+        // Anything inside of $timeout will automatically have an $apply run afterwards - thus updating the view.
+        // See http://stackoverflow.com/questions/12729122/prevent-error-digest-already-in-progress-when-calling-scope-apply
+        me.$$apply = function(handler, args) {
+            $timeout(function() {
+                handler.apply(me, args);
+            });
+
+            //if (me.$$config.scope) {
+            //    me.$$config.scope.$apply(function() {
+            //        handler.apply(me, args);
+            //    });
+            //}
+            //else {
+            //    handler.apply(me, args);
+            //}
         };
 
         me.$$init = function (cfg) {
@@ -146,9 +169,12 @@
             };
 
             me.$$ws.onopen = function () {
+                // Reset the number of reconnect attempts back to zero.
+                me.$$reconnectAttempts = 0;
+
                 // Clear the reconnect task if exists
                 if (me.$$reconnectTask) {
-                    clearInterval(me.$$reconnectTask);
+                    $timeout.cancel(me.$$reconnectTask);
                     delete me.$$reconnectTask;
                 }
 
@@ -166,9 +192,9 @@
             me.$$ws.onclose = function () {
                 // Activate the reconnect task
                 if (me.$$config.reconnect) {
-                    me.$$reconnectTask = setInterval(function () {
+                    me.$$reconnectTask = $timeout(function () {
                         if (me.$status() === me.$CLOSED) me.$open();
-                    }, me.$$config.reconnectInterval);
+                    }, me.$$getReconnectTimeout());
                 }
 
                 me.$$fireEvent('$close');
@@ -177,18 +203,21 @@
             return me;
         };
 
+        // Exponential Backoff Formula by Prof. Douglas Thain
+        // http://dthain.blogspot.co.uk/2009/02/exponential-backoff-in-distributed.html
+        me.$$getReconnectTimeout = function() {
+            var R = Math.random() + 1;
+            var T = me.$$config.initialReconnectTimeout;
+            var F = 2;
+            var N = ++me.$$reconnectAttempts; // Add 1 to the number of attempts.
+            var M = me.$$config.maxReconnectTimeout;
+            return Math.floor(Math.min(R * T * Math.pow(F, N), M));
+        };
+
         me.$CONNECTING = 0;
         me.$OPEN = 1;
         me.$CLOSING = 2;
         me.$CLOSED = 3;
-
-        // TODO: it doesn't refresh the view (maybe $apply on something?)
-        /*me.$bind = function (event, scope, model) {
-         me.$on(event, function (message) {
-         model = message;
-         scope.$apply();
-         });
-         };*/
 
         me.$on = function () {
             var handlers = [];
@@ -243,7 +272,7 @@
             if (me.$status() !== me.$CLOSED) me.$$ws.close();
 
             if (me.$$reconnectTask) {
-                clearInterval(me.$$reconnectTask);
+                $timeout.cancel(me.$$reconnectTask);
                 delete me.$$reconnectTask;
             }
 
