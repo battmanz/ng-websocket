@@ -268,13 +268,20 @@
             return me;
         };
 
+        // This will return false in two conditions:
+        // 1. The reconnect flag was initially set to false on the config object.
+        // 2. The connection was explicitly closed via the $close method.
+        me.$canReconnect = function() {
+            return me.$$config.reconnect;
+        };
+
         me.$isReconnecting = function() {
             return !!me.$$reconnectTask; // convert to boolean
         };
 
         me.$reconnect = function() {
-            if (!me.$$config.reconnect) {
-                throw Error('The reconnect flag is false, therefore you cannot reconnect');
+            if (!me.$canReconnect()) {
+                throw Error('The socket cannot be reconnected. Try opening a new connection.');
             }
 
             if (!me.$isReconnecting()) {
