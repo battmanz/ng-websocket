@@ -192,26 +192,13 @@
             me.$$ws.onclose = function () {
                 // Activate the reconnect task
                 if (me.$$config.reconnect) {
-                    me.$$reconnectTask = $timeout(function () {
-                        if (me.$status() === me.$CLOSED) me.$open();
-                    }, me.$$getReconnectTimeout());
+                    me.$reconnect();
                 }
 
                 me.$$fireEvent('$close');
             };
 
             return me;
-        };
-
-        // Exponential Backoff Formula by Prof. Douglas Thain
-        // http://dthain.blogspot.co.uk/2009/02/exponential-backoff-in-distributed.html
-        me.$$getReconnectTimeout = function() {
-            var R = Math.random() + 1;
-            var T = me.$$config.initialReconnectTimeout;
-            var F = 2;
-            var N = ++me.$$reconnectAttempts; // Add 1 to the number of attempts.
-            var M = me.$$config.maxReconnectTimeout;
-            return Math.floor(Math.min(R * T * Math.pow(F, N), M));
         };
 
         me.$CONNECTING = 0;
@@ -279,6 +266,34 @@
             me.$$config.reconnect = false;
 
             return me;
+        };
+
+        me.$isReconnecting = function() {
+            return !!me.$$reconnectTask; // convert to boolean
+        };
+
+        me.$reconnect = function() {
+            if (!me.$$config.reconnect) {
+                throw Error('The reconnect flag is false, therefore you cannot reconnect');
+            }
+
+            if (!me.$isReconnecting()) {
+                me.$$reconnectTask = $timeout(function () {
+                    if (me.$status() === me.$CLOSED) me.$open();
+                }, me.$$getReconnectTimeout());
+            }
+            return me;
+        };
+
+        // Exponential Backoff Formula by Prof. Douglas Thain
+        // http://dthain.blogspot.co.uk/2009/02/exponential-backoff-in-distributed.html
+        me.$$getReconnectTimeout = function() {
+            var R = Math.random() + 1;
+            var T = me.$$config.initialReconnectTimeout;
+            var F = 2;
+            var N = ++me.$$reconnectAttempts; // Add 1 to the number of attempts.
+            var M = me.$$config.maxReconnectTimeout;
+            return Math.floor(Math.min(R * T * Math.pow(F, N), M));
         };
 
         me.$status = function () {
