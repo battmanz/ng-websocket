@@ -130,15 +130,6 @@
             $timeout(function() {
                 handler.apply(me, args);
             });
-
-            //if (me.$$config.scope) {
-            //    me.$$config.scope.$apply(function() {
-            //        handler.apply(me, args);
-            //    });
-            //}
-            //else {
-            //    handler.apply(me, args);
-            //}
         };
 
         me.$$init = function (cfg) {
@@ -273,11 +264,12 @@
             return me;
         };
 
-        // This will return false in two conditions:
-        // 1. The reconnect flag was initially set to false on the config object.
-        // 2. The connection was explicitly closed via the $close method.
+        // This will return false under three conditions:
+        // 1. The WebSocket has never been initialized.
+        // 2. The reconnect flag was initially set to false on the config object.
+        // 3. The connection was explicitly closed via the $close method.
         me.$canReconnect = function() {
-            return me.$$config.reconnect;
+            return me.$$ws && me.$$config.reconnect;
         };
 
         me.$isReconnecting = function() {
@@ -286,10 +278,7 @@
 
         me.$reconnect = function() {
             if (!me.$canReconnect()) {
-                throw Error('The socket cannot be reconnected because either:\n' +
-                    ' a) it was not configured to allow it or\n' +
-                    ' b) it was explicitly closed.\n' +
-                    'Try opening a new connection.');
+                throw Error('The socket cannot be reconnected. Try opening a new connection.');
             }
 
             if (!me.$isReconnecting()) {
