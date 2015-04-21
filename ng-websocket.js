@@ -192,7 +192,12 @@
             me.$$ws.onclose = function () {
                 // Activate the reconnect task
                 if (me.$$config.reconnect) {
-                    me.$reconnect();
+                    var reconnectTimeout = me.$$getReconnectTimeout();
+                    console.log('Reconnecting in ' + (reconnectTimeout / 1000) + ' seconds');
+
+                    me.$$reconnectTask = $timeout(function () {
+                        if (me.$status() === me.$CLOSED) me.$open();
+                    }, reconnectTimeout);
                 }
 
                 me.$$fireEvent('$close');
@@ -281,13 +286,14 @@
 
         me.$reconnect = function() {
             if (!me.$canReconnect()) {
-                throw Error('The socket cannot be reconnected. Try opening a new connection.');
+                throw Error('The socket cannot be reconnected because either:\n' +
+                    ' a) it was not configured to allow it or\n' +
+                    ' b) it was explicitly closed.\n' +
+                    'Try opening a new connection.');
             }
 
             if (!me.$isReconnecting()) {
-                me.$$reconnectTask = $timeout(function () {
-                    if (me.$status() === me.$CLOSED) me.$open();
-                }, me.$$getReconnectTimeout());
+                me.$$ws.close();
             }
             return me;
         };
