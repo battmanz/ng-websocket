@@ -187,7 +187,7 @@
                     console.log('Reconnecting in ' + (reconnectTimeout / 1000) + ' seconds');
 
                     me.$$reconnectTask = $timeout(function () {
-                        if (me.$status() === me.$CLOSED) me.$open();
+                        me.$open();
                     }, reconnectTimeout);
                 }
 
